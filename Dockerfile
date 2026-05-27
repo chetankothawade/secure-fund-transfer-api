@@ -13,6 +13,7 @@ RUN apk add --no-cache \
         unzip \
     && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
     && docker-php-ext-install -j"$(nproc)" \
+        bcmath \
         intl \
         opcache \
         pdo_mysql \

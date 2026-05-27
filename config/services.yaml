@@ -19,5 +19,21 @@ services:
     App\:
         resource: '../src/'
 
+    App\Domain\Repository\AccountRepositoryInterface:
+        alias: App\Infrastructure\Persistence\DoctrineAccountRepository
+
+    App\Infrastructure\Audit\AuditLoggerInterface:
+        alias: App\Infrastructure\Audit\DoctrineAuditLogger
+
+    App\Infrastructure\Redis\IdempotencyStoreInterface:
+        alias: App\Infrastructure\Redis\IdempotencyService
+
+    Predis\Client:
+        arguments:
+            - '%env(REDIS_URL)%'
+
+    Predis\ClientInterface:
+        alias: Predis\Client
+
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
