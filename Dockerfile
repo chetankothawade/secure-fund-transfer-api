@@ -11,6 +11,7 @@ RUN apk add --no-cache \
         mysql-client \
         oniguruma-dev \
         unzip \
+    && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
     && docker-php-ext-install -j"$(nproc)" \
         intl \
         opcache \
@@ -18,7 +19,7 @@ RUN apk add --no-cache \
         zip \
     && pecl install redis \
     && docker-php-ext-enable redis \
-    && apk del --no-cache oniguruma-dev
+    && apk del --no-cache .build-deps oniguruma-dev
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
