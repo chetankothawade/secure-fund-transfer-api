@@ -6,7 +6,7 @@ namespace App\Tests\Unit;
 
 use App\Domain\Entity\Account;
 use App\Domain\Entity\Transaction;
-use App\Domain\Exception\InsufficientFunds;
+use App\Domain\Exception\InsufficientFundsException;
 use App\Domain\Exception\InvalidTransactionState;
 use App\Domain\ValueObject\Money;
 use App\Domain\ValueObject\TransferStatus;
@@ -28,7 +28,7 @@ final class DomainModelTest extends TestCase
     {
         $account = new Account('account-1', 'Ada Lovelace', new Money(100, 'USD'));
 
-        $this->expectException(InsufficientFunds::class);
+        $this->expectException(InsufficientFundsException::class);
 
         $account->debit(new Money(101, 'USD'));
     }

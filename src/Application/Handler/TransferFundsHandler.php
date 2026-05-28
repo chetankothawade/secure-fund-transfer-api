@@ -10,9 +10,9 @@ use App\Domain\Event\TransferInitiated;
 use App\Domain\Repository\AccountRepositoryInterface;
 use App\Domain\Repository\TransactionRepositoryInterface;
 use App\Domain\ValueObject\Money;
+use App\Infrastructure\Redis\IdempotencyStoreInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use InvalidArgumentException;
-use Predis\ClientInterface as RedisClient;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -20,28 +20,25 @@ use Symfony\Component\Messenger\MessageBusInterface;
 #[AsMessageHandler]
 final readonly class TransferFundsHandler
 {
-    private const IDEMPOTENCY_TTL_SECONDS = 86400;
     private const MONEY_SCALE = 4;
 
     public function __construct(
         private AccountRepositoryInterface $accountRepository,
         private TransactionRepositoryInterface $transactionRepository,
         private EntityManagerInterface $entityManager,
-        private RedisClient $redis,
+        private IdempotencyStoreInterface $idempotency,
         private LoggerInterface $logger,
         private MessageBusInterface $messageBus,
     ) {
     }
 
-    public function __invoke(TransferFundsCommand $command): ?string
+    public function __invoke(TransferFundsCommand $command): string
     {
         return $this->handle($command);
     }
 
-    public function handle(TransferFundsCommand $command): ?string
+    public function handle(TransferFundsCommand $command): string
     {
-        $redisKey = 'idempotency:'.$command->idempotencyKey;
-
         if ($command->idempotencyKey === '') {
             throw new InvalidArgumentException('Idempotency key is required.');
         }
@@ -50,16 +47,21 @@ final readonly class TransferFundsHandler
             throw new InvalidArgumentException('Source and destination accounts must differ.');
         }
 
-        $reserved = $this->redis->set($redisKey, 'processing', 'EX', self::IDEMPOTENCY_TTL_SECONDS, 'NX');
+        $idempotencyResult = $this->idempotency->start($command->idempotencyKey);
 
-        if ((string) $reserved !== 'OK') {
+        if ($idempotencyResult->transactionId !== null) {
             $this->logger->info('Duplicate transfer request skipped.', [
+                'transaction_id' => $idempotencyResult->transactionId,
                 'from_account_id' => $command->fromAccountId,
                 'to_account_id' => $command->toAccountId,
                 'idempotency_key' => $command->idempotencyKey,
             ]);
 
-            return null;
+            return $idempotencyResult->transactionId;
+        }
+
+        if ($idempotencyResult->processing) {
+            throw new InvalidArgumentException('A transfer with this idempotency key is still processing.');
         }
 
         try {
@@ -88,12 +90,12 @@ final readonly class TransferFundsHandler
                 return $transaction;
             });
         } catch (\Throwable $exception) {
-            $this->redis->del([$redisKey]);
+            $this->idempotency->release($command->idempotencyKey);
 
             throw $exception;
         }
 
-        $this->redis->set($redisKey, $transaction->id, 'EX', self::IDEMPOTENCY_TTL_SECONDS);
+        $this->idempotency->complete($command->idempotencyKey, $transaction->id);
         $this->messageBus->dispatch(new TransferInitiated(
             transactionId: $transaction->id,
             fromAccountId: $transaction->fromAccountId,

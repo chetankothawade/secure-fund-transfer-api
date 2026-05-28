@@ -25,12 +25,10 @@ The transfer handler reserves an idempotency key in Redis with `SET NX`, opens a
 
 ```bash
 cp .env.example .env
-docker compose up -d --build
-
+docker compose build --no-cache php
+docker compose up -d
 docker compose exec php composer install
-
 docker compose exec php php bin/console doctrine:migrations:migrate --no-interaction
-
 docker compose exec php php bin/console app:seed:demo-accounts
 ```
 
@@ -192,21 +190,30 @@ http://127.0.0.1:8080/docs/openapi.json
 Create a transfer:
 
 ```bash
-curl -X POST http://localhost:8080/transfers \
+curl -i -X POST http://localhost:8080/transfers \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: demo-transfer-1" \
+  -H "X-User-Id: demo-user-1" \
   -d '{
     "from_account_id": "11111111-1111-1111-1111-111111111111",
     "to_account_id": "22222222-2222-2222-2222-222222222222",
     "amount": 25.50,
     "currency": "USD"
-  }'
+}'
 ```
+
+Successful transfers return `201 Created` with the transaction ID. Validation, domain, and unexpected errors are returned as RFC 7807 `application/problem+json`.
 
 Read an account:
 
 ```bash
 curl http://localhost:8080/accounts/11111111-1111-1111-1111-111111111111
+```
+
+Read only the current balance:
+
+```bash
+curl http://localhost:8080/accounts/11111111-1111-1111-1111-111111111111/balance
 ```
 
 ## Tests
@@ -231,9 +238,10 @@ Current coverage includes pure domain unit tests and integration-style transfer 
 - MySQL transactions protect account balance updates.
 - `SELECT ... FOR UPDATE` serializes concurrent transfers touching the same account rows.
 - Redis idempotency keys prevent duplicate request processing for 24 hours.
+- Symfony RateLimiter uses Redis for a fixed window of 30 transfer requests per minute per user key.
 - `transactions.idempotency_key` is unique as a database backstop.
 - Money is represented as integer minor units in the domain.
-- API exceptions are normalized to JSON and server errors are logged.
+- API exceptions are normalized to RFC 7807 JSON and logs are structured JSON with transfer context.
 
 ## Tradeoffs And Next Steps
 
@@ -254,5 +262,6 @@ AI assistance was used to generate and refine the implementation. Main prompts i
 - "Create a Symfony 7 project scaffold with Docker Compose for PHP 8.3-fpm, Nginx, MySQL 8, and Redis 7..."
 - "Write a PHP 8.3 domain model for a fund transfer system..."
 - "Write a Symfony Messenger command and handler for transferring funds..."
+- "Add API validation, Redis rate limiting/idempotency, RFC 7807 errors, and structured JSON logging."
 
 All generated code was reviewed and adjusted for the final architecture, idempotency behavior, transaction handling, and tests.

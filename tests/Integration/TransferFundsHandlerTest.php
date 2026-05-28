@@ -12,6 +12,7 @@ use App\Domain\Event\TransferInitiated;
 use App\Domain\Repository\AccountRepositoryInterface;
 use App\Domain\Repository\TransactionRepositoryInterface;
 use App\Domain\ValueObject\Money;
+use App\Infrastructure\Redis\IdempotencyService;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Predis\ClientInterface;
@@ -36,7 +37,7 @@ final class TransferFundsHandlerTest extends TestCase
             $accounts,
             $transactions,
             $this->transactionalEntityManager(expectsTransaction: true),
-            $redis,
+            new IdempotencyService($redis),
             new NullLogger(),
             $messageBus,
         );
@@ -65,12 +66,12 @@ final class TransferFundsHandlerTest extends TestCase
             $accounts,
             new InMemoryTransactionRepository(),
             $this->transactionalEntityManager(expectsTransaction: false),
-            $redis,
+            new IdempotencyService($redis),
             new NullLogger(),
             new RecordingMessageBus(),
         );
 
-        self::assertNull($handler(new TransferFundsCommand('from', 'to', 2.50, 'USD', 'request-1')));
+        self::assertSame('transaction-1', $handler(new TransferFundsCommand('from', 'to', 2.50, 'USD', 'request-1')));
         self::assertSame(0, $accounts->locks);
     }
 
@@ -203,6 +204,10 @@ final class InMemoryRedisClient implements ClientInterface
             }
 
             return 1;
+        }
+
+        if ($method === 'get') {
+            return $this->values[$arguments[0]] ?? null;
         }
 
         throw new \BadMethodCallException($method);

@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Infrastructure\Persistence;
 
 use App\Domain\Entity\Account;
+use App\Domain\Exception\AccountNotFoundException;
 use App\Domain\Repository\AccountRepositoryInterface;
 use App\Domain\ValueObject\Money;
 use Doctrine\ORM\EntityManagerInterface;
-use RuntimeException;
 
 final readonly class DoctrineAccountRepository implements AccountRepositoryInterface
 {
@@ -26,7 +26,7 @@ final readonly class DoctrineAccountRepository implements AccountRepositoryInter
         );
 
         if ($row === false) {
-            throw new RuntimeException(sprintf('Account "%s" was not found.', $accountId));
+            throw AccountNotFoundException::forAccount($accountId);
         }
 
         return new Account(

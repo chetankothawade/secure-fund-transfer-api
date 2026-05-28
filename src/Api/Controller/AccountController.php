@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Api\Controller;
 
+use App\Api\Response\ProblemJsonFactory;
 use Doctrine\DBAL\Connection;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
@@ -34,6 +35,29 @@ final readonly class AccountController
             'currency' => $account['currency'],
             'version' => (int) $account['version'],
             'created_at' => $account['created_at'],
+        ]);
+    }
+
+    #[Route('/accounts/{id}/balance', name: 'api_accounts_balance', methods: ['GET'])]
+    public function balance(string $id, Connection $connection, ProblemJsonFactory $problemJsonFactory): JsonResponse
+    {
+        $account = $connection->fetchAssociative(
+            'SELECT balance, currency FROM accounts WHERE id = ?',
+            [$id]
+        );
+
+        if ($account === false) {
+            return $problemJsonFactory->create(
+                JsonResponse::HTTP_NOT_FOUND,
+                'Account not found',
+                sprintf('Account "%s" was not found.', $id),
+                'https://example.com/problems/account-not-found',
+            );
+        }
+
+        return new JsonResponse([
+            'balance' => $account['balance'],
+            'currency' => $account['currency'],
         ]);
     }
 }

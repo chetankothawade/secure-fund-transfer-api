@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\ValueObject;
 
+use App\Domain\Exception\CurrencyMismatchException;
 use InvalidArgumentException;
 
 final readonly class Money
@@ -72,7 +73,7 @@ final readonly class Money
     private function assertSameCurrency(self $other): void
     {
         if ($this->currency !== $other->currency) {
-            throw new InvalidArgumentException('Currency mismatch.');
+            throw CurrencyMismatchException::create();
         }
     }
 }

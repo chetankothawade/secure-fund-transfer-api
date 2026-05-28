@@ -6,5 +6,9 @@ namespace App\Infrastructure\Redis;
 
 interface IdempotencyStoreInterface
 {
-    public function reserve(string $key, int $ttlSeconds): void;
+    public function start(string $key): IdempotencyResult;
+
+    public function complete(string $key, string $transactionId): void;
+
+    public function release(string $key): void;
 }

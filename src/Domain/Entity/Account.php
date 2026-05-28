@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Entity;
 
-use App\Domain\Exception\InsufficientFunds;
+use App\Domain\Exception\InsufficientFundsException;
 use App\Domain\ValueObject\Money;
 
 final class Account
@@ -20,7 +20,7 @@ final class Account
     public function debit(Money $amount): void
     {
         if ($amount->isGreaterThan($this->balance)) {
-            throw InsufficientFunds::forAccount($this->id);
+            throw InsufficientFundsException::forAccount($this->id);
         }
 
         $this->balance = $this->balance->subtract($amount);
