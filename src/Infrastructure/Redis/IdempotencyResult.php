@@ -10,21 +10,27 @@ final readonly class IdempotencyResult
         public bool $reserved,
         public ?string $transactionId,
         public bool $processing,
+        public bool $fingerprintMismatch,
     ) {
     }
 
     public static function reserved(): self
     {
-        return new self(true, null, false);
+        return new self(true, null, false, false);
     }
 
     public static function cached(string $transactionId): self
     {
-        return new self(false, $transactionId, false);
+        return new self(false, $transactionId, false, false);
     }
 
     public static function processing(): self
     {
-        return new self(false, null, true);
+        return new self(false, null, true, false);
+    }
+
+    public static function fingerprintMismatch(): self
+    {
+        return new self(false, null, false, true);
     }
 }

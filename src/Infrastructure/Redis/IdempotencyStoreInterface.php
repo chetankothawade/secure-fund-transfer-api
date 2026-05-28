@@ -6,9 +6,9 @@ namespace App\Infrastructure\Redis;
 
 interface IdempotencyStoreInterface
 {
-    public function start(string $key): IdempotencyResult;
+    public function start(string $key, string $fingerprint): IdempotencyResult;
 
-    public function complete(string $key, string $transactionId): void;
+    public function complete(string $key, string $fingerprint, string $transactionId): void;
 
     public function release(string $key): void;
 }

@@ -3,7 +3,7 @@
   "info": {
     "title": "Secure Fund Transfer API",
     "version": "1.0.0",
-    "description": "API for transferring funds between accounts with Redis idempotency, Redis-backed rate limiting, RFC 7807 errors, and MySQL transaction integrity."
+    "description": "API for transferring funds between accounts with API key authentication, Redis idempotency, Redis-backed rate limiting, RFC 7807 errors, and MySQL transaction integrity."
   },
   "servers": [
     {
@@ -22,6 +22,16 @@
         "description": "Creates a transfer. Requests are limited to 30 per minute per authenticated user key. Reusing an idempotency key returns the original transaction ID without processing the transfer again.",
         "operationId": "createTransfer",
         "parameters": [
+          {
+            "name": "X-Api-Key",
+            "in": "header",
+            "required": true,
+            "description": "Shared API key configured with TRANSFER_API_KEY.",
+            "schema": {
+              "type": "string",
+              "example": "demo-transfer-api-key"
+            }
+          },
           {
             "name": "Idempotency-Key",
             "in": "header",
@@ -75,6 +85,9 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           },
           "409": {
             "$ref": "#/components/responses/Conflict"
@@ -190,10 +203,17 @@
             "example": "22222222-2222-2222-2222-222222222222"
           },
           "amount": {
-            "type": "number",
-            "format": "float",
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d+(?:\\.\\d{1,4})?$"
+              },
+              {
+                "type": "number"
+              }
+            ],
             "exclusiveMinimum": 0,
-            "example": 25.5
+            "example": "25.5000"
           },
           "currency": {
             "type": "string",
@@ -328,6 +348,16 @@
       },
       "Conflict": {
         "description": "Conflict while processing request, including insufficient funds or duplicate in-progress idempotency key.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid API key.",
         "content": {
           "application/problem+json": {
             "schema": {

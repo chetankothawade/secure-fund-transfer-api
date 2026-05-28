@@ -34,10 +34,20 @@ final readonly class DoctrineTransactionRepository implements TransactionReposit
             'id' => $transaction->id,
             'from_account_id' => $transaction->fromAccountId,
             'to_account_id' => $transaction->toAccountId,
-            'amount' => number_format($transaction->amount->toFloat(self::MONEY_SCALE), self::MONEY_SCALE, '.', ''),
+            'amount' => $transaction->amount->toDecimal(self::MONEY_SCALE),
             'currency' => $transaction->amount->currency,
             'status' => $transaction->status()->value,
             'idempotency_key' => $transaction->idempotencyKey,
         ]);
+    }
+
+    public function findIdByIdempotencyKey(string $idempotencyKey): ?string
+    {
+        $id = $this->entityManager->getConnection()->fetchOne(
+            'SELECT id FROM transactions WHERE idempotency_key = ?',
+            [$idempotencyKey],
+        );
+
+        return is_string($id) && $id !== '' ? $id : null;
     }
 }

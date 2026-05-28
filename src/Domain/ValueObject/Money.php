@@ -40,6 +40,30 @@ final readonly class Money
         return new self((int) round($amount * (10 ** $scale)), strtoupper($currency));
     }
 
+    public static function fromDecimal(string $amount, string $currency, int $scale = self::DEFAULT_SCALE): self
+    {
+        $amount = trim($amount);
+
+        if (! preg_match('/^\d+(?:\.\d+)?$/', $amount)) {
+            throw new InvalidArgumentException('Amount must be a positive decimal value.');
+        }
+
+        [$whole, $fraction] = array_pad(explode('.', $amount, 2), 2, '');
+
+        if (strlen($fraction) > $scale) {
+            throw new InvalidArgumentException(sprintf('Amount cannot have more than %d decimal places.', $scale));
+        }
+
+        $minorUnits = ((int) $whole) * (10 ** $scale);
+        $minorUnits += (int) str_pad($fraction, $scale, '0');
+
+        if ($minorUnits <= 0) {
+            throw new InvalidArgumentException('Amount must be greater than zero.');
+        }
+
+        return new self($minorUnits, strtoupper($currency));
+    }
+
     public function add(self $other): self
     {
         $this->assertSameCurrency($other);
@@ -68,6 +92,15 @@ final readonly class Money
     public function toFloat(int $scale = self::DEFAULT_SCALE): float
     {
         return $this->minorUnits / (10 ** $scale);
+    }
+
+    public function toDecimal(int $scale = self::DEFAULT_SCALE): string
+    {
+        $factor = 10 ** $scale;
+        $whole = intdiv($this->minorUnits, $factor);
+        $fraction = $this->minorUnits % $factor;
+
+        return sprintf('%d.%0'.$scale.'d', $whole, $fraction);
     }
 
     private function assertSameCurrency(self $other): void

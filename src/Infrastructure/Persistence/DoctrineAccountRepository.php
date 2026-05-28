@@ -32,7 +32,7 @@ final readonly class DoctrineAccountRepository implements AccountRepositoryInter
         return new Account(
             id: (string) $row['id'],
             ownerName: (string) $row['owner_name'],
-            balance: Money::fromFloat((float) $row['balance'], (string) $row['currency'], self::MONEY_SCALE),
+            balance: Money::fromDecimal((string) $row['balance'], (string) $row['currency'], self::MONEY_SCALE),
             version: (int) $row['version'],
         );
     }
@@ -40,7 +40,7 @@ final readonly class DoctrineAccountRepository implements AccountRepositoryInter
     public function save(Account $account): void
     {
         $this->entityManager->getConnection()->update('accounts', [
-            'balance' => number_format($account->balance()->toFloat(self::MONEY_SCALE), self::MONEY_SCALE, '.', ''),
+            'balance' => $account->balance()->toDecimal(self::MONEY_SCALE),
             'version' => $account->version,
         ], [
             'id' => $account->id,

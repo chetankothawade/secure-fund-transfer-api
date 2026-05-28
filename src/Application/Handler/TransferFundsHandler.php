@@ -11,6 +11,8 @@ use App\Domain\Repository\AccountRepositoryInterface;
 use App\Domain\Repository\TransactionRepositoryInterface;
 use App\Domain\ValueObject\Money;
 use App\Infrastructure\Redis\IdempotencyStoreInterface;
+use Doctrine\DBAL\Exception\RetryableException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
@@ -21,6 +23,7 @@ use Symfony\Component\Messenger\MessageBusInterface;
 final readonly class TransferFundsHandler
 {
     private const MONEY_SCALE = 4;
+    private const MAX_TRANSACTION_ATTEMPTS = 3;
 
     public function __construct(
         private AccountRepositoryInterface $accountRepository,
@@ -47,7 +50,13 @@ final readonly class TransferFundsHandler
             throw new InvalidArgumentException('Source and destination accounts must differ.');
         }
 
-        $idempotencyResult = $this->idempotency->start($command->idempotencyKey);
+        $amount = Money::fromDecimal($command->amount, $command->currency, self::MONEY_SCALE);
+        $fingerprint = $this->fingerprint($command, $amount);
+        $idempotencyResult = $this->idempotency->start($command->idempotencyKey, $fingerprint);
+
+        if ($idempotencyResult->fingerprintMismatch) {
+            throw new InvalidArgumentException('Idempotency key was already used for a different transfer request.');
+        }
 
         if ($idempotencyResult->transactionId !== null) {
             $this->logger->info('Duplicate transfer request skipped.', [
@@ -61,14 +70,30 @@ final readonly class TransferFundsHandler
         }
 
         if ($idempotencyResult->processing) {
+            $existingTransactionId = $this->transactionRepository->findIdByIdempotencyKey($command->idempotencyKey);
+
+            if ($existingTransactionId !== null) {
+                $this->completeIdempotency($command->idempotencyKey, $fingerprint, $existingTransactionId);
+
+                return $existingTransactionId;
+            }
+
             throw new InvalidArgumentException('A transfer with this idempotency key is still processing.');
         }
 
+        $existingTransactionId = $this->transactionRepository->findIdByIdempotencyKey($command->idempotencyKey);
+
+        if ($existingTransactionId !== null) {
+            $this->completeIdempotency($command->idempotencyKey, $fingerprint, $existingTransactionId);
+
+            return $existingTransactionId;
+        }
+
         try {
-            $transaction = $this->entityManager->wrapInTransaction(function () use ($command): Transaction {
-                $amount = Money::fromFloat($command->amount, $command->currency, self::MONEY_SCALE);
-                $fromAccount = $this->accountRepository->findForUpdate($command->fromAccountId);
-                $toAccount = $this->accountRepository->findForUpdate($command->toAccountId);
+            $transaction = $this->runInRetryableTransaction(function () use ($command, $amount): Transaction {
+                $accounts = $this->lockAccounts($command->fromAccountId, $command->toAccountId);
+                $fromAccount = $accounts[$command->fromAccountId];
+                $toAccount = $accounts[$command->toAccountId];
 
                 $fromAccount->debit($amount);
                 $toAccount->credit($amount);
@@ -89,13 +114,25 @@ final readonly class TransferFundsHandler
 
                 return $transaction;
             });
+        } catch (UniqueConstraintViolationException $exception) {
+            $existingTransactionId = $this->transactionRepository->findIdByIdempotencyKey($command->idempotencyKey);
+
+            if ($existingTransactionId !== null) {
+                $this->completeIdempotency($command->idempotencyKey, $fingerprint, $existingTransactionId);
+
+                return $existingTransactionId;
+            }
+
+            $this->idempotency->release($command->idempotencyKey);
+
+            throw $exception;
         } catch (\Throwable $exception) {
             $this->idempotency->release($command->idempotencyKey);
 
             throw $exception;
         }
 
-        $this->idempotency->complete($command->idempotencyKey, $transaction->id);
+        $this->completeIdempotency($command->idempotencyKey, $fingerprint, $transaction->id);
         $this->messageBus->dispatch(new TransferInitiated(
             transactionId: $transaction->id,
             fromAccountId: $transaction->fromAccountId,
@@ -110,5 +147,68 @@ final readonly class TransferFundsHandler
         ]);
 
         return $transaction->id;
+    }
+
+    /**
+     * @return array<string, \App\Domain\Entity\Account>
+     */
+    private function lockAccounts(string $fromAccountId, string $toAccountId): array
+    {
+        $accountIds = [$fromAccountId, $toAccountId];
+        sort($accountIds, SORT_STRING);
+
+        $accounts = [];
+
+        foreach ($accountIds as $accountId) {
+            $accounts[$accountId] = $this->accountRepository->findForUpdate($accountId);
+        }
+
+        return $accounts;
+    }
+
+    /**
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function runInRetryableTransaction(callable $operation): mixed
+    {
+        for ($attempt = 1; $attempt <= self::MAX_TRANSACTION_ATTEMPTS; ++$attempt) {
+            try {
+                return $this->entityManager->wrapInTransaction($operation);
+            } catch (RetryableException $exception) {
+                if ($attempt === self::MAX_TRANSACTION_ATTEMPTS) {
+                    throw $exception;
+                }
+
+                usleep(50_000 * $attempt);
+            }
+        }
+
+        throw new \LogicException('Retry loop exited unexpectedly.');
+    }
+
+    private function completeIdempotency(string $key, string $fingerprint, string $transactionId): void
+    {
+        try {
+            $this->idempotency->complete($key, $fingerprint, $transactionId);
+        } catch (\Throwable $exception) {
+            $this->logger->critical('Transfer committed but Redis idempotency cache could not be completed.', [
+                'transaction_id' => $transactionId,
+                'exception' => $exception,
+            ]);
+        }
+    }
+
+    private function fingerprint(TransferFundsCommand $command, Money $amount): string
+    {
+        return hash('sha256', json_encode([
+            'from_account_id' => $command->fromAccountId,
+            'to_account_id' => $command->toAccountId,
+            'amount' => $amount->toDecimal(self::MONEY_SCALE),
+            'currency' => strtoupper($command->currency),
+        ], JSON_THROW_ON_ERROR));
     }
 }

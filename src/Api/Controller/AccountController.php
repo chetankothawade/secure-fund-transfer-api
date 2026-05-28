@@ -12,7 +12,7 @@ use Symfony\Component\Routing\Attribute\Route;
 final readonly class AccountController
 {
     #[Route('/accounts/{id}', name: 'api_accounts_show', methods: ['GET'])]
-    public function show(string $id, Connection $connection): JsonResponse
+    public function show(string $id, Connection $connection, ProblemJsonFactory $problemJsonFactory): JsonResponse
     {
         $account = $connection->fetchAssociative(
             'SELECT id, owner_name, balance, currency, version, created_at FROM accounts WHERE id = ?',
@@ -20,12 +20,12 @@ final readonly class AccountController
         );
 
         if ($account === false) {
-            return new JsonResponse([
-                'error' => [
-                    'code' => 'not_found',
-                    'message' => 'Account not found.',
-                ],
-            ], JsonResponse::HTTP_NOT_FOUND);
+            return $problemJsonFactory->create(
+                JsonResponse::HTTP_NOT_FOUND,
+                'Account not found',
+                sprintf('Account "%s" was not found.', $id),
+                'https://example.com/problems/account-not-found',
+            );
         }
 
         return new JsonResponse([

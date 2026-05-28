@@ -1,6 +1,6 @@
 # Secure Fund Transfer API
 
-Symfony 7.4 API for transferring funds between accounts with MySQL persistence, Redis idempotency protection, and focused tests around the money-transfer workflow.
+Symfony 7.4 API for transferring funds between accounts with MySQL persistence, Redis idempotency protection, a shared API key guard, and focused tests around the money-transfer workflow.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ The code follows a small layered structure:
 - `Domain` contains pure PHP entities, value objects, events, exceptions, and repository ports.
 - `Infrastructure` contains Doctrine/DBAL repositories, Redis adapters, and framework subscribers.
 
-The transfer handler reserves an idempotency key in Redis with `SET NX`, opens a database transaction, loads both accounts using `SELECT ... FOR UPDATE`, applies domain `debit()` and `credit()`, persists a completed transaction, stores the idempotency result for 24 hours, and dispatches `TransferInitiated`.
+The transfer handler reserves an idempotency key in Redis with `SET NX`, binds it to a request fingerprint, opens a database transaction, loads both accounts using `SELECT ... FOR UPDATE` in stable order, applies domain `debit()` and `credit()`, persists a completed transaction, stores the idempotency result for 24 hours, and dispatches `TransferInitiated`.
 
 ## Requirements
 
@@ -82,6 +82,7 @@ APP_ENV=dev
 APP_SECRET=change-me
 DATABASE_URL="mysql://root:@127.0.0.1:3306/transfer_db?serverVersion=8.0.32&charset=utf8mb4"
 REDIS_URL=redis://127.0.0.1:6379
+TRANSFER_API_KEY=demo-transfer-api-key
 ```
 
 If you see `getaddrinfo for redis failed`, the app is running outside Docker while `REDIS_URL` is still set to `redis://redis:6379`. Change it to `redis://127.0.0.1:6379` for local runs.
@@ -192,6 +193,7 @@ Create a transfer:
 ```bash
 curl -i -X POST http://localhost:8080/transfers \
   -H "Content-Type: application/json" \
+  -H "X-Api-Key: demo-transfer-api-key" \
   -H "Idempotency-Key: demo-transfer-1" \
   -H "X-User-Id: demo-user-1" \
   -d '{
@@ -231,28 +233,33 @@ With Docker:
 docker compose exec php php bin/phpunit
 ```
 
-Current coverage includes pure domain unit tests and integration-style transfer handler tests for successful transfer and duplicate idempotency behavior.
+Current coverage includes pure domain unit tests and integration-style transfer handler tests for successful transfer, duplicate idempotency behavior, idempotency payload mismatch rejection, committed transaction recovery when Redis is missing or still processing the result, and stable account lock ordering.
 
 ## Reliability Notes
 
 - MySQL transactions protect account balance updates.
 - `SELECT ... FOR UPDATE` serializes concurrent transfers touching the same account rows.
+- Account rows are locked in deterministic ID order to reduce deadlock risk.
+- Retryable database transaction failures are retried up to three times.
 - Redis idempotency keys prevent duplicate request processing for 24 hours.
+- Idempotency keys are bound to a request fingerprint so key reuse with different transfer details is rejected.
+- If a transfer committed but Redis completion failed, the next retry recovers the transaction from MySQL by idempotency key.
 - Symfony RateLimiter uses Redis for a fixed window of 30 transfer requests per minute per user key.
 - `transactions.idempotency_key` is unique as a database backstop.
-- Money is represented as integer minor units in the domain.
+- Money is represented as integer minor units in the domain and parsed from fixed-scale decimal text.
+- `POST /transfers` requires `X-Api-Key`; configure it through `TRANSFER_API_KEY`.
 - API exceptions are normalized to RFC 7807 JSON and logs are structured JSON with transfer context.
 
 ## Tradeoffs And Next Steps
 
-- Authentication/JWT and rate limiting are not fully implemented yet; the structure is ready for `lexik_jwt` and Symfony rate limiter.
+- Authentication is intentionally lightweight for this exercise: `POST /transfers` uses a shared `X-Api-Key`. A production deployment should replace this with JWT/OAuth2 or mTLS and account-level authorization.
 - A real production deployment should use HTTPS, secret management, request tracing, and metrics.
 - Additional tests should cover HTTP functional flows against MySQL/Redis containers and high-concurrency transfer attempts.
 - The current Messenger transport is synchronous for simple local operation; async Redis/Doctrine transport can be enabled for background workflows.
 
 ## Time Spent
 
-Time spent: ~5 hours.
+Time spent: ~8 hours.
 
 ## AI Tools And Prompts Used
 

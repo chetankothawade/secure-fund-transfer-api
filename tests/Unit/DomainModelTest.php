@@ -22,6 +22,8 @@ final class DomainModelTest extends TestCase
         self::assertSame(7_50, $money->subtract(new Money(2_50, 'USD'))->minorUnits);
         self::assertTrue($money->isGreaterThan(new Money(9_99, 'USD')));
         self::assertSame(1234, Money::fromFloat(12.34, 'USD')->minorUnits);
+        self::assertSame(123400, Money::fromDecimal('12.3400', 'USD', 4)->minorUnits);
+        self::assertSame('12.3400', Money::fromDecimal('12.34', 'USD', 4)->toDecimal(4));
     }
 
     public function testAccountRejectsInsufficientFunds(): void

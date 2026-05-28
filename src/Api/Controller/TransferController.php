@@ -31,8 +31,20 @@ final readonly class TransferController
         LoggerInterface $logger,
         #[Autowire(service: 'limiter.transfers')]
         RateLimiterFactory $transferLimiter,
+        #[Autowire('%env(TRANSFER_API_KEY)%')]
+        string $apiKey,
     ): JsonResponse {
         $startedAt = microtime(true);
+
+        if (! $this->isAuthorized($request, $apiKey)) {
+            return $problemJsonFactory->create(
+                JsonResponse::HTTP_UNAUTHORIZED,
+                'Unauthorized',
+                'A valid X-Api-Key header is required.',
+                'https://example.com/problems/unauthorized',
+            );
+        }
+
         $limit = $transferLimiter->create($this->rateLimitKey($request))->consume();
 
         if (! $limit->isAccepted()) {
@@ -74,7 +86,7 @@ final readonly class TransferController
         $envelope = $messageBus->dispatch(new TransferFundsCommand(
             fromAccountId: (string) $transferRequest->from_account_id,
             toAccountId: (string) $transferRequest->to_account_id,
-            amount: (float) $transferRequest->amount,
+            amount: (string) $transferRequest->amount,
             currency: (string) $transferRequest->currency,
             idempotencyKey: (string) $transferRequest->idempotency_key,
         ));
@@ -102,5 +114,14 @@ final readonly class TransferController
     private function userId(Request $request): ?string
     {
         return $request->getUser() ?? $request->headers->get('X-User-Id');
+    }
+
+    private function isAuthorized(Request $request, string $configuredApiKey): bool
+    {
+        $requestApiKey = $request->headers->get('X-Api-Key');
+
+        return is_string($requestApiKey)
+            && $requestApiKey !== ''
+            && hash_equals($configuredApiKey, $requestApiKey);
     }
 }
