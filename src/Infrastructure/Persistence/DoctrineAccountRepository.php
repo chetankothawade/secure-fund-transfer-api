@@ -4,63 +4,46 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Persistence;
 
+use App\Domain\Entity\Account;
 use App\Domain\Repository\AccountRepositoryInterface;
 use App\Domain\ValueObject\Money;
-use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
+use RuntimeException;
 
 final readonly class DoctrineAccountRepository implements AccountRepositoryInterface
 {
-    public function __construct(private Connection $connection)
+    private const MONEY_SCALE = 4;
+
+    public function __construct(private EntityManagerInterface $entityManager)
     {
     }
 
-    public function transfer(string $fromAccountId, string $toAccountId, Money $amount, string $idempotencyKey): string
+    public function findForUpdate(string $accountId): Account
     {
-        return $this->connection->transactional(function () use ($fromAccountId, $toAccountId, $amount, $idempotencyKey): string {
-            $from = $this->connection->fetchAssociative(
-                'SELECT * FROM accounts WHERE id = ? FOR UPDATE',
-                [$fromAccountId]
-            );
-            $to = $this->connection->fetchAssociative(
-                'SELECT * FROM accounts WHERE id = ? FOR UPDATE',
-                [$toAccountId]
-            );
+        $row = $this->entityManager->getConnection()->fetchAssociative(
+            'SELECT * FROM accounts WHERE id = ? FOR UPDATE',
+            [$accountId]
+        );
 
-            if ($from === false || $to === false) {
-                throw new \RuntimeException('Account not found.');
-            }
+        if ($row === false) {
+            throw new RuntimeException(sprintf('Account "%s" was not found.', $accountId));
+        }
 
-            if ($from['currency'] !== $amount->currency || $to['currency'] !== $amount->currency) {
-                throw new \RuntimeException('Currency mismatch.');
-            }
+        return new Account(
+            id: (string) $row['id'],
+            ownerName: (string) $row['owner_name'],
+            balance: Money::fromFloat((float) $row['balance'], (string) $row['currency'], self::MONEY_SCALE),
+            version: (int) $row['version'],
+        );
+    }
 
-            $decimalAmount = number_format($amount->toFloat(), 4, '.', '');
-
-            if (bccomp((string) $from['balance'], $decimalAmount, 4) < 0) {
-                throw new \RuntimeException('Insufficient funds.');
-            }
-
-            $transactionId = $this->connection->fetchOne('SELECT uuid_generate_v4()');
-
-            $this->connection->executeStatement(
-                'UPDATE accounts SET balance = balance - ?, version = version + 1 WHERE id = ?',
-                [$decimalAmount, $fromAccountId]
-            );
-            $this->connection->executeStatement(
-                'UPDATE accounts SET balance = balance + ?, version = version + 1 WHERE id = ?',
-                [$decimalAmount, $toAccountId]
-            );
-            $this->connection->insert('transactions', [
-                'id' => $transactionId,
-                'from_account_id' => $fromAccountId,
-                'to_account_id' => $toAccountId,
-                'amount' => $decimalAmount,
-                'currency' => $amount->currency,
-                'status' => 'completed',
-                'idempotency_key' => $idempotencyKey,
-            ]);
-
-            return (string) $transactionId;
-        });
+    public function save(Account $account): void
+    {
+        $this->entityManager->getConnection()->update('accounts', [
+            'balance' => number_format($account->balance()->toFloat(self::MONEY_SCALE), self::MONEY_SCALE, '.', ''),
+            'version' => $account->version,
+        ], [
+            'id' => $account->id,
+        ]);
     }
 }

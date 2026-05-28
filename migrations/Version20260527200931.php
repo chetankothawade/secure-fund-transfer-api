@@ -22,7 +22,7 @@ final class Version20260527200931 extends AbstractMigration
         );
 
         $this->addSql(<<<'SQL'
-            CREATE TABLE accounts (
+            CREATE TABLE IF NOT EXISTS accounts (
                 id CHAR(36) NOT NULL,
                 owner_name VARCHAR(255) NOT NULL,
                 balance DECIMAL(19, 4) NOT NULL,
@@ -34,18 +34,7 @@ final class Version20260527200931 extends AbstractMigration
         SQL);
 
         $this->addSql(<<<'SQL'
-            CREATE TRIGGER trg_accounts_uuid_before_insert
-            BEFORE INSERT ON accounts
-            FOR EACH ROW
-            BEGIN
-                IF NEW.id IS NULL OR NEW.id = '' THEN
-                    SET NEW.id = uuid_generate_v4();
-                END IF;
-            END
-        SQL);
-
-        $this->addSql(<<<'SQL'
-            CREATE TABLE transactions (
+            CREATE TABLE IF NOT EXISTS transactions (
                 id CHAR(36) NOT NULL,
                 from_account_id CHAR(36) NOT NULL,
                 to_account_id CHAR(36) NOT NULL,
@@ -63,18 +52,7 @@ final class Version20260527200931 extends AbstractMigration
         SQL);
 
         $this->addSql(<<<'SQL'
-            CREATE TRIGGER trg_transactions_uuid_before_insert
-            BEFORE INSERT ON transactions
-            FOR EACH ROW
-            BEGIN
-                IF NEW.id IS NULL OR NEW.id = '' THEN
-                    SET NEW.id = uuid_generate_v4();
-                END IF;
-            END
-        SQL);
-
-        $this->addSql(<<<'SQL'
-            CREATE TABLE audit_log (
+            CREATE TABLE IF NOT EXISTS audit_log (
                 id BIGINT UNSIGNED AUTO_INCREMENT NOT NULL,
                 transaction_id CHAR(36) NOT NULL,
                 event VARCHAR(255) NOT NULL,
@@ -100,8 +78,6 @@ final class Version20260527200931 extends AbstractMigration
         $this->addSql('ALTER TABLE audit_log DROP FOREIGN KEY FK_AUDIT_LOG_TRANSACTION');
         $this->addSql('ALTER TABLE transactions DROP FOREIGN KEY FK_TRANSACTIONS_FROM_ACCOUNT');
         $this->addSql('ALTER TABLE transactions DROP FOREIGN KEY FK_TRANSACTIONS_TO_ACCOUNT');
-        $this->addSql('DROP TRIGGER IF EXISTS trg_transactions_uuid_before_insert');
-        $this->addSql('DROP TRIGGER IF EXISTS trg_accounts_uuid_before_insert');
         $this->addSql('DROP TABLE audit_log');
         $this->addSql('DROP TABLE transactions');
         $this->addSql('DROP TABLE accounts');

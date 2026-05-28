@@ -49,7 +49,7 @@ RUN { \
 COPY . .
 
 RUN if [ -f composer.json ]; then \
-        composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader; \
+        composer install --prefer-dist --no-interaction --no-progress --optimize-autoloader; \
     fi \
     && mkdir -p var/cache var/log \
     && chown -R www-data:www-data var

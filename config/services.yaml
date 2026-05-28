@@ -22,6 +22,9 @@ services:
     App\Domain\Repository\AccountRepositoryInterface:
         alias: App\Infrastructure\Persistence\DoctrineAccountRepository
 
+    App\Domain\Repository\TransactionRepositoryInterface:
+        alias: App\Infrastructure\Persistence\DoctrineTransactionRepository
+
     App\Infrastructure\Audit\AuditLoggerInterface:
         alias: App\Infrastructure\Audit\DoctrineAuditLogger
 

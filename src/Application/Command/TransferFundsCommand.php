@@ -9,7 +9,7 @@ final readonly class TransferFundsCommand
     public function __construct(
         public string $fromAccountId,
         public string $toAccountId,
-        public string $amount,
+        public float $amount,
         public string $currency,
         public string $idempotencyKey,
     ) {
