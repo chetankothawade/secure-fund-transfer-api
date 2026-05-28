@@ -252,7 +252,7 @@ Current coverage includes pure domain unit tests and integration-style transfer 
 
 ## Time Spent
 
-Time spent: ~3 hours.
+Time spent: ~5 hours.
 
 ## AI Tools And Prompts Used
 
