@@ -9,8 +9,14 @@ use Doctrine\DBAL\Connection;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
 
+/**
+ * Exposes read-only account lookup endpoints.
+ */
 final readonly class AccountController
 {
+    /**
+     * Return account profile and ledger metadata for a single account.
+     */
     #[Route('/accounts/{id}', name: 'api_accounts_show', methods: ['GET'])]
     public function show(string $id, Connection $connection, ProblemJsonFactory $problemJsonFactory): JsonResponse
     {
@@ -38,6 +44,9 @@ final readonly class AccountController
         ]);
     }
 
+    /**
+     * Return the current monetary balance for a single account.
+     */
     #[Route('/accounts/{id}/balance', name: 'api_accounts_balance', methods: ['GET'])]
     public function balance(string $id, Connection $connection, ProblemJsonFactory $problemJsonFactory): JsonResponse
     {

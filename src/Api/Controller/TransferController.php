@@ -19,8 +19,14 @@ use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
+/**
+ * Handles authenticated transfer creation requests.
+ */
 final readonly class TransferController
 {
+    /**
+     * Validate the incoming request and dispatch the transfer command.
+     */
     #[Route('/transfers', name: 'api_transfers_create', methods: ['POST'])]
     public function __invoke(
         Request $request,
@@ -45,6 +51,7 @@ final readonly class TransferController
             );
         }
 
+        // Rate limiting is keyed by authenticated user when possible, then IP for anonymous requests.
         $limit = $transferLimiter->create($this->rateLimitKey($request))->consume();
 
         if (! $limit->isAccepted()) {
@@ -73,6 +80,7 @@ final readonly class TransferController
             );
         }
 
+        // Prefer the HTTP header so retries can be idempotent without duplicating it in the JSON body.
         $payload['idempotency_key'] = $request->headers->get('Idempotency-Key', $payload['idempotency_key'] ?? '');
 
         /** @var CreateTransferRequest $transferRequest */
@@ -90,6 +98,8 @@ final readonly class TransferController
             currency: (string) $transferRequest->currency,
             idempotencyKey: (string) $transferRequest->idempotency_key,
         ));
+
+        // Symfony Messenger stores the synchronous handler return value on the handled stamp.
         $transactionId = $envelope->last(HandledStamp::class)?->getResult();
 
         $logger->info('Transfer request completed.', [
@@ -103,6 +113,9 @@ final readonly class TransferController
         ], JsonResponse::HTTP_CREATED);
     }
 
+    /**
+     * Build the limiter bucket key for this request.
+     */
     private function rateLimitKey(Request $request): string
     {
         return (string) (
@@ -111,11 +124,17 @@ final readonly class TransferController
         );
     }
 
+    /**
+     * Resolve the caller identifier from standard auth or the API's explicit user header.
+     */
     private function userId(Request $request): ?string
     {
         return $request->getUser() ?? $request->headers->get('X-User-Id');
     }
 
+    /**
+     * Compare API keys using a timing-safe comparison.
+     */
     private function isAuthorized(Request $request, string $configuredApiKey): bool
     {
         $requestApiKey = $request->headers->get('X-Api-Key');

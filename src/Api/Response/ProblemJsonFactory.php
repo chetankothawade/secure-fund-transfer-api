@@ -8,9 +8,14 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Validator\ConstraintViolationListInterface;
 
+/**
+ * Builds RFC 7807-compatible JSON error responses for API clients.
+ */
 final readonly class ProblemJsonFactory
 {
     /**
+     * Create an application/problem+json response with optional extension members.
+     *
      * @param array<string, mixed> $extra
      */
     public function create(
@@ -29,6 +34,9 @@ final readonly class ProblemJsonFactory
         ], $status, ['Content-Type' => 'application/problem+json']);
     }
 
+    /**
+     * Convert Symfony validation violations into the API's standard problem response.
+     */
     public function validation(ConstraintViolationListInterface $violations): JsonResponse
     {
         $errors = [];
